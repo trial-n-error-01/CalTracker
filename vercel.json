@@ -1,0 +1,12 @@
+{
+    "rewrites": [
+        {
+            "source": "/daily-log",
+            "destination": "/index.html"
+        },
+        {
+            "source": "/progress",
+            "destination": "/index.html"
+        }
+    ]
+}

@@ -1,7 +1,6 @@
 import {
   useEffect,
   useMemo,
-  useRef,
   useState,
   type CSSProperties,
   type FormEvent,
@@ -16,6 +15,7 @@ import {
   Flame,
   LayoutDashboard,
   LogOut,
+  Menu,
   Pencil,
   Plus,
   Search,
@@ -105,6 +105,10 @@ const mealIcons: Record<MealName, typeof Coffee> = {
 const meals: MealName[] = ["Breakfast", "Lunch", "Dinner", "Snacks"];
 const dateKey = (date: Date) => date.toISOString().slice(0, 10);
 const todayKey = dateKey(new Date());
+const viewFromPath = (path: string) =>
+  path === "/daily-log" ? "Daily log" : path === "/progress" ? "Progress" : "Overview";
+const pathFromView = (view: string) =>
+  view === "Daily log" ? "/daily-log" : view === "Progress" ? "/progress" : "/";
 
 function App() {
   const [user, setUser] = useState<User | null>(null);
@@ -279,8 +283,8 @@ function AuthScreen({
 }
 
 function Tracker({ user }: { user: User }) {
-  const [activeView, setActiveView] = useState("Overview");
-  const dailyLogRef = useRef<HTMLElement | null>(null);
+  const [activeView, setActiveView] = useState(() => viewFromPath(window.location.pathname));
+  const [isSidebarOpen, setIsSidebarOpen] = useState(false);
   const [selectedDate, setSelectedDate] = useState(todayKey);
   const [rhythmRange, setRhythmRange] = useState<RhythmRange>("7");
   const [customStart, setCustomStart] = useState(() => {
@@ -316,6 +320,12 @@ function Tracker({ user }: { user: User }) {
   const [isMultipart, setIsMultipart] = useState(false);
   const [editingEntry, setEditingEntry] = useState<Entry | null>(null);
   const [saveError, setSaveError] = useState("");
+
+  useEffect(() => {
+    const handlePopState = () => setActiveView(viewFromPath(window.location.pathname));
+    window.addEventListener("popstate", handlePopState);
+    return () => window.removeEventListener("popstate", handlePopState);
+  }, []);
 
   useEffect(() => {
     const profileRef = doc(db, "users", user.uid);
@@ -601,15 +611,6 @@ function Tracker({ user }: { user: User }) {
   };
   const signOutUser = () =>
     signOut(auth).catch(() => setSaveError("Unable to sign out."));
-  const navigateToView = (view: string) => {
-    setActiveView(view);
-    if (view === "Overview") {
-      setSelectedDate(todayKey);
-    }
-    if (view === "Daily log") {
-      dailyLogRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
-    }
-  };
   const saveSettings = async () => {
     const nextProfile: Profile = {
       displayName: settingsForm.displayName.trim() || currentDisplayName(user),
@@ -630,7 +631,7 @@ function Tracker({ user }: { user: User }) {
 
   return (
     <div className="app-shell">
-      <aside className="sidebar">
+      <aside className={isSidebarOpen ? "sidebar open" : "sidebar"}>
         <div className="brand">
           <span className="brand-mark">
             <Activity size={17} />
@@ -653,14 +654,15 @@ function Tracker({ user }: { user: User }) {
             { label: "Daily log", icon: Utensils },
             { label: "Progress", icon: Activity },
           ].map(({ label, icon: Icon }) => (
-            <button
+            <a
               className={activeView === label ? "nav-item active" : "nav-item"}
+              href={pathFromView(label)}
               key={label}
-              onClick={() => navigateToView(label)}
+              onClick={() => setIsSidebarOpen(false)}
             >
               <Icon size={18} />
               {label}
-            </button>
+            </a>
           ))}
         </nav>
         <div className="sidebar-bottom">
@@ -678,6 +680,13 @@ function Tracker({ user }: { user: User }) {
           </div>
         </div>
       </aside>
+      {isSidebarOpen && (
+        <button
+          className="sidebar-backdrop"
+          aria-label="Close navigation"
+          onClick={() => setIsSidebarOpen(false)}
+        />
+      )}
       <main className="main-content">
         <header className="topbar">
           <div className="mobile-brand brand">
@@ -686,6 +695,13 @@ function Tracker({ user }: { user: User }) {
             </span>
             nourish<span className="brand-dot">.</span>
           </div>
+          <button
+            className="mobile-menu-button"
+            aria-label="Open navigation"
+            onClick={() => setIsSidebarOpen(true)}
+          >
+            <Menu size={20} />
+          </button>
           <div className="breadcrumbs">
             <span>Workspace</span>
             <span>/</span>
@@ -1045,7 +1061,7 @@ function Tracker({ user }: { user: User }) {
               </article>
             </div>
           </section>
-          <section className="log-section" ref={dailyLogRef}>
+          <section className="log-section">
             <div className="daily-intake-summary">
               <DailyIntakeStat
                 label="Calories"
