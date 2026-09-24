@@ -842,12 +842,17 @@
 }
 
 .daily-log-page .summary-grid,
-.daily-log-page .chart-grid {
+.daily-log-page .chart-grid,
+.daily-log-page .progress-macro-section {
     display: none;
 }
 
 .section-heading {
     align-items: center;
+}
+
+.daily-log-page .section-heading {
+    margin-top: 32px;
 }
 
 .section-heading h2 {
@@ -871,6 +876,11 @@
 .intake-stat.over {
     border-color: #f0d4c9;
     background: #fbebe5;
+}
+
+.intake-stat.positive {
+    border-color: #c9dfd0;
+    background: #edf6ef;
 }
 
 .intake-stat span,
@@ -901,6 +911,10 @@
 
 .intake-stat.over .intake-remaining {
     color: #b24f3c;
+}
+
+.intake-stat.positive .intake-remaining {
+    color: #609068;
 }
 
 .intake-goal {

@@ -18,7 +18,6 @@ import {
   Menu,
   Pencil,
   Plus,
-  Search,
   Settings,
   Sparkles,
   Utensils,
@@ -105,6 +104,11 @@ const mealIcons: Record<MealName, typeof Coffee> = {
 const meals: MealName[] = ["Breakfast", "Lunch", "Dinner", "Snacks"];
 const dateKey = (date: Date) => date.toISOString().slice(0, 10);
 const todayKey = dateKey(new Date());
+const defaultRangeStart = () => {
+  const date = new Date();
+  date.setDate(date.getDate() - 6);
+  return dateKey(date);
+};
 const viewFromPath = (path: string) =>
   path === "/daily-log" ? "Daily log" : path === "/progress" ? "Progress" : "Overview";
 const pathFromView = (view: string) =>
@@ -286,13 +290,15 @@ function Tracker({ user }: { user: User }) {
   const [activeView, setActiveView] = useState(() => viewFromPath(window.location.pathname));
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
   const [selectedDate, setSelectedDate] = useState(todayKey);
-  const [rhythmRange, setRhythmRange] = useState<RhythmRange>("7");
-  const [customStart, setCustomStart] = useState(() => {
-    const date = new Date();
-    date.setDate(date.getDate() - 6);
-    return dateKey(date);
-  });
-  const [customEnd, setCustomEnd] = useState(todayKey);
+  const [calorieRange, setCalorieRange] = useState<RhythmRange>("7");
+  const [proteinRange, setProteinRange] = useState<RhythmRange>("7");
+  const [fiberRange, setFiberRange] = useState<RhythmRange>("7");
+  const [calorieCustomStart, setCalorieCustomStart] = useState(defaultRangeStart);
+  const [calorieCustomEnd, setCalorieCustomEnd] = useState(todayKey);
+  const [proteinCustomStart, setProteinCustomStart] = useState(defaultRangeStart);
+  const [proteinCustomEnd, setProteinCustomEnd] = useState(todayKey);
+  const [fiberCustomStart, setFiberCustomStart] = useState(defaultRangeStart);
+  const [fiberCustomEnd, setFiberCustomEnd] = useState(todayKey);
   const [entries, setEntries] = useState<Entry[]>([]);
   const [dayTotals, setDayTotals] = useState<DayTotal[]>([]);
   const [profile, setProfile] = useState<Profile>({
@@ -447,16 +453,14 @@ function Tracker({ user }: { user: User }) {
         })),
     [dayTotals],
   );
-  const rhythmData = useMemo(() => {
-    if (rhythmRange === "7") return weeklyData;
-    const start = rhythmRange === "month"
-      ? `${todayKey.slice(0, 7)}-01`
-      : customStart;
-    const end = rhythmRange === "month" ? todayKey : customEnd;
+  const dataForRange = (range: RhythmRange, customStart: string, customEnd: string) => {
+    if (range === "7") return weeklyData;
+    const start = range === "month" ? `${todayKey.slice(0, 7)}-01` : customStart;
+    const end = range === "month" ? todayKey : customEnd;
     return dayTotals
       .filter((item) => item.date >= start && item.date <= end)
       .map((item) => ({
-        day: rhythmRange === "month"
+        day: range === "month"
           ? item.date.slice(-2)
           : parseDateKey(item.date).toLocaleDateString([], {
             month: "short",
@@ -466,10 +470,22 @@ function Tracker({ user }: { user: User }) {
         protein: item.protein,
         fiber: item.fiber,
       }));
-  }, [customEnd, customStart, dayTotals, rhythmRange, weeklyData]);
-  const rhythmRangeLabel = rhythmRange === "7"
+  };
+  const calorieData = useMemo(
+    () => dataForRange(calorieRange, calorieCustomStart, calorieCustomEnd),
+    [calorieCustomEnd, calorieCustomStart, calorieRange, dayTotals, weeklyData],
+  );
+  const proteinData = useMemo(
+    () => dataForRange(proteinRange, proteinCustomStart, proteinCustomEnd),
+    [proteinCustomEnd, proteinCustomStart, proteinRange, dayTotals, weeklyData],
+  );
+  const fiberData = useMemo(
+    () => dataForRange(fiberRange, fiberCustomStart, fiberCustomEnd),
+    [dayTotals, fiberCustomEnd, fiberCustomStart, fiberRange, weeklyData],
+  );
+  const calorieRangeLabel = calorieRange === "7"
     ? "Last 7 days"
-    : rhythmRange === "month"
+    : calorieRange === "month"
       ? "This month"
       : "Custom range";
   const average = dayTotals.length
@@ -707,15 +723,6 @@ function Tracker({ user }: { user: User }) {
             <span>/</span>
             <strong>{activeView}</strong>
           </div>
-          <div className="topbar-actions">
-            <button className="icon-button" aria-label="Search">
-              <Search size={18} />
-            </button>
-            <button className="icon-button" aria-label="Calendar">
-              <CalendarDays size={18} />
-            </button>
-            <div className="top-avatar">{initials(profile.displayName)}</div>
-          </div>
         </header>
         <div className={`page-wrap ${activeView === "Progress" ? "progress-page" : activeView === "Daily log" ? "daily-log-page" : "overview-page"}`}>
           <section className="welcome-row">
@@ -832,54 +839,24 @@ function Tracker({ user }: { user: User }) {
             <article className="panel chart-panel">
               <div className="panel-heading">
                 <div>
-                  <p className="eyebrow">{rhythmRangeLabel}</p>
+                  <p className="eyebrow">{calorieRangeLabel}</p>
                   <h2>Calorie rhythm</h2>
                 </div>
-                <div className="rhythm-controls">
-                  <label className="select-button">
-                    <select
-                      aria-label="Calorie rhythm date range"
-                      value={rhythmRange}
-                      onChange={(event) => setRhythmRange(event.target.value as RhythmRange)}
-                    >
-                      <option value="7">Last 7 days</option>
-                      <option value="month">This month</option>
-                      <option value="custom">Custom dates</option>
-                    </select>
-                    <ChevronDown size={14} />
-                  </label>
-                  {rhythmRange === "custom" && (
-                    <div className="custom-range-controls">
-                      <label>
-                        From
-                        <input
-                          type="date"
-                          max={customEnd}
-                          value={customStart}
-                          onChange={(event) => {
-                            const value = event.target.value;
-                            setCustomStart(value);
-                            if (value > customEnd) setCustomEnd(value);
-                          }}
-                        />
-                      </label>
-                      <label>
-                        To
-                        <input
-                          type="date"
-                          min={customStart}
-                          max={todayKey}
-                          value={customEnd}
-                          onChange={(event) => {
-                            const value = event.target.value;
-                            setCustomEnd(value);
-                            if (value < customStart) setCustomStart(value);
-                          }}
-                        />
-                      </label>
-                    </div>
-                  )}
-                </div>
+                <DateRangeControls
+                  ariaLabel="Calorie rhythm date range"
+                  range={calorieRange}
+                  onRangeChange={setCalorieRange}
+                  customStart={calorieCustomStart}
+                  customEnd={calorieCustomEnd}
+                  onCustomStartChange={(value) => {
+                    setCalorieCustomStart(value);
+                    if (value > calorieCustomEnd) setCalorieCustomEnd(value);
+                  }}
+                  onCustomEndChange={(value) => {
+                    setCalorieCustomEnd(value);
+                    if (value < calorieCustomStart) setCalorieCustomStart(value);
+                  }}
+                />
               </div>
               <div className="chart-legend">
                 <span>
@@ -893,7 +870,7 @@ function Tracker({ user }: { user: User }) {
               </div>
               <div className="chart-area">
                 <ResponsiveContainer width="100%" height="100%">
-                  <BarChart data={rhythmData} barCategoryGap="28%">
+                  <BarChart data={calorieData} barCategoryGap="28%">
                     <CartesianGrid vertical={false} stroke="#eae6de" />
                     <XAxis
                       dataKey="day"
@@ -1005,7 +982,6 @@ function Tracker({ user }: { user: User }) {
           </section>
           <section className="progress-macro-section">
             <div className="progress-macro-heading">
-              <p className="eyebrow">{rhythmRangeLabel}</p>
               <h2>Macro intake</h2>
             </div>
             <div className="macro-graphs-grid">
@@ -1015,12 +991,26 @@ function Tracker({ user }: { user: User }) {
                     <p className="eyebrow">Protein</p>
                     <h2>{formatNutrition(targetProtein)}g goal</h2>
                   </div>
-                  <i className="legend-line" />
+                  <DateRangeControls
+                    ariaLabel="Protein date range"
+                    range={proteinRange}
+                    onRangeChange={setProteinRange}
+                    customStart={proteinCustomStart}
+                    customEnd={proteinCustomEnd}
+                    onCustomStartChange={(value) => {
+                      setProteinCustomStart(value);
+                      if (value > proteinCustomEnd) setProteinCustomEnd(value);
+                    }}
+                    onCustomEndChange={(value) => {
+                      setProteinCustomEnd(value);
+                      if (value < proteinCustomStart) setProteinCustomStart(value);
+                    }}
+                  />
                 </div>
                 <div className="chart-area macro-chart-area">
-                  {rhythmData.length ? (
+                  {proteinData.length ? (
                     <ResponsiveContainer width="100%" height="100%">
-                      <LineChart data={rhythmData}>
+                      <LineChart data={proteinData}>
                         <CartesianGrid vertical={false} stroke="#eae6de" />
                         <XAxis dataKey="day" axisLine={false} tickLine={false} tick={{ fill: "#817d74", fontSize: 11 }} dy={10} />
                         <YAxis hide domain={[0, Math.max(targetProtein, targetFiber) * 1.3]} />
@@ -1040,12 +1030,26 @@ function Tracker({ user }: { user: User }) {
                     <p className="eyebrow">Fiber</p>
                     <h2>{formatNutrition(targetFiber)}g goal</h2>
                   </div>
-                  <i className="legend-line" />
+                  <DateRangeControls
+                    ariaLabel="Fiber date range"
+                    range={fiberRange}
+                    onRangeChange={setFiberRange}
+                    customStart={fiberCustomStart}
+                    customEnd={fiberCustomEnd}
+                    onCustomStartChange={(value) => {
+                      setFiberCustomStart(value);
+                      if (value > fiberCustomEnd) setFiberCustomEnd(value);
+                    }}
+                    onCustomEndChange={(value) => {
+                      setFiberCustomEnd(value);
+                      if (value < fiberCustomStart) setFiberCustomStart(value);
+                    }}
+                  />
                 </div>
                 <div className="chart-area macro-chart-area">
-                  {rhythmData.length ? (
+                  {fiberData.length ? (
                     <ResponsiveContainer width="100%" height="100%">
-                      <LineChart data={rhythmData}>
+                      <LineChart data={fiberData}>
                         <CartesianGrid vertical={false} stroke="#eae6de" />
                         <XAxis dataKey="day" axisLine={false} tickLine={false} tick={{ fill: "#817d74", fontSize: 11 }} dy={10} />
                         <YAxis hide domain={[0, Math.max(targetProtein, targetFiber) * 1.3]} />
@@ -1076,6 +1080,7 @@ function Tracker({ user }: { user: User }) {
                 remaining={`${formatNutrition(Math.max(0, targetProtein - totalProtein))}g`}
                 goal={`${formatNutrition(targetProtein)}g goal`}
                 over={totalProtein > targetProtein}
+                overIsPositive
               />
               <DailyIntakeStat
                 label="Fiber"
@@ -1083,16 +1088,16 @@ function Tracker({ user }: { user: User }) {
                 remaining={`${formatNutrition(Math.max(0, targetFiber - totalFiber))}g`}
                 goal={`${formatNutrition(targetFiber)}g goal`}
                 over={totalFiber > targetFiber}
+                overIsPositive
               />
             </div>
             <div className="section-heading">
               <div>
-                <p className="eyebrow">{formatShortDate(parseDateKey(selectedDate))}</p>
                 <h2>Daily log</h2>
               </div>
               <button className="add-button" onClick={startAddingEntry}>
                 <Plus size={17} />
-                Add food
+                Add log
               </button>
             </div>
             <div className="meal-list">
@@ -1362,25 +1367,85 @@ function roundNutrition(value: string | number) {
 function formatNutrition(value: number) {
   return roundNutrition(value).toString();
 }
+function DateRangeControls({
+  ariaLabel,
+  range,
+  onRangeChange,
+  customStart,
+  customEnd,
+  onCustomStartChange,
+  onCustomEndChange,
+}: {
+  ariaLabel: string;
+  range: RhythmRange;
+  onRangeChange: (range: RhythmRange) => void;
+  customStart: string;
+  customEnd: string;
+  onCustomStartChange: (value: string) => void;
+  onCustomEndChange: (value: string) => void;
+}) {
+  return (
+    <div className="rhythm-controls">
+      <label className="select-button">
+        <select
+          aria-label={ariaLabel}
+          value={range}
+          onChange={(event) => onRangeChange(event.target.value as RhythmRange)}
+        >
+          <option value="7">Last 7 days</option>
+          <option value="month">This month</option>
+          <option value="custom">Custom dates</option>
+        </select>
+        <ChevronDown size={14} />
+      </label>
+      {range === "custom" && (
+        <div className="custom-range-controls">
+          <label>
+            From
+            <input
+              type="date"
+              max={customEnd}
+              value={customStart}
+              onChange={(event) => onCustomStartChange(event.target.value)}
+            />
+          </label>
+          <label>
+            To
+            <input
+              type="date"
+              min={customStart}
+              max={todayKey}
+              value={customEnd}
+              onChange={(event) => onCustomEndChange(event.target.value)}
+            />
+          </label>
+        </div>
+      )}
+    </div>
+  );
+}
 function DailyIntakeStat({
   label,
   consumed,
   remaining,
   goal,
   over,
+  overIsPositive = false,
 }: {
   label: string;
   consumed: string;
   remaining: string;
   goal: string;
   over: boolean;
+  overIsPositive?: boolean;
 }) {
+  const statusClass = over ? (overIsPositive ? "positive" : "over") : "";
   return (
-    <div className={over ? "intake-stat over" : "intake-stat"}>
+    <div className={`intake-stat ${statusClass}`}>
       <span className="intake-label">{label}</span>
       <strong>{consumed}</strong>
       <span className="intake-remaining">
-        {over ? "Over goal" : `${remaining} remaining`}
+        {over && !overIsPositive ? "Over goal" : `${remaining} remaining`}
       </span>
       <span className="intake-goal">{goal}</span>
     </div>
