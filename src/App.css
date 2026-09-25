@@ -275,6 +275,27 @@
     cursor: pointer;
 }
 
+.day-controls {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+}
+
+.day-type-button select {
+    max-width: 112px;
+}
+
+.goal-group {
+    padding-top: 14px;
+    border-top: 1px solid #e9e2d8;
+}
+
+.goal-group h3 {
+    margin: 0 0 10px;
+    color: #4c4841;
+    font-size: 12px;
+}
+
 .date-picker {
     position: absolute;
     inset: 0;

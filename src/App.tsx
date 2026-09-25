@@ -66,6 +66,12 @@ import "./App.css";
 
 type MealName = "Breakfast" | "Lunch" | "Dinner" | "Snacks";
 type RhythmRange = "7" | "month" | "custom";
+type DayType = "normal" | "cardio" | "strength";
+type GoalSet = {
+  calories: number;
+  protein: number;
+  fiber: number;
+};
 type MealPart = {
   name: string;
   calories: number;
@@ -84,9 +90,7 @@ type Entry = {
 };
 type Profile = {
   displayName: string;
-  maintenanceCalories: number;
-  proteinGoal: number;
-  fiberGoal: number;
+  dayGoals: Record<DayType, GoalSet>;
 };
 type DayTotal = {
   date: string;
@@ -102,6 +106,16 @@ const mealIcons: Record<MealName, typeof Coffee> = {
   Snacks: Sparkles,
 };
 const meals: MealName[] = ["Breakfast", "Lunch", "Dinner", "Snacks"];
+const dayTypeLabels: Record<DayType, string> = {
+  normal: "Normal day",
+  cardio: "Cardio day",
+  strength: "Strength day",
+};
+const defaultDayGoals: Record<DayType, GoalSet> = {
+  normal: { calories: 1200, protein: 40, fiber: 20 },
+  cardio: { calories: 1400, protein: 40, fiber: 20 },
+  strength: { calories: 1450, protein: 60, fiber: 20 },
+};
 const dateKey = (date: Date) => date.toISOString().slice(0, 10);
 const todayKey = dateKey(new Date());
 const defaultRangeStart = () => {
@@ -172,7 +186,7 @@ function AuthScreen({
           {
             displayName: name.trim() || email.split("@")[0],
             email,
-            maintenanceCalories: 2200,
+            dayGoals: defaultDayGoals,
             createdAt: serverTimestamp(),
           },
           { merge: true },
@@ -290,6 +304,7 @@ function Tracker({ user }: { user: User }) {
   const [activeView, setActiveView] = useState(() => viewFromPath(window.location.pathname));
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
   const [selectedDate, setSelectedDate] = useState(todayKey);
+  const [dayType, setDayType] = useState<DayType>("normal");
   const [calorieRange, setCalorieRange] = useState<RhythmRange>("7");
   const [proteinRange, setProteinRange] = useState<RhythmRange>("7");
   const [fiberRange, setFiberRange] = useState<RhythmRange>("7");
@@ -303,16 +318,12 @@ function Tracker({ user }: { user: User }) {
   const [dayTotals, setDayTotals] = useState<DayTotal[]>([]);
   const [profile, setProfile] = useState<Profile>({
     displayName: user.displayName || user.email?.split("@")[0] || "there",
-    maintenanceCalories: 2200,
-    proteinGoal: 120,
-    fiberGoal: 30,
+    dayGoals: defaultDayGoals,
   });
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
   const [settingsForm, setSettingsForm] = useState({
     displayName: user.displayName || user.email?.split("@")[0] || "there",
-    maintenanceCalories: "2200",
-    proteinGoal: "120",
-    fiberGoal: "30",
+    dayGoals: goalFormValues(defaultDayGoals),
   });
   const [isAdding, setIsAdding] = useState(false);
   const [newEntry, setNewEntry] = useState({
@@ -335,21 +346,25 @@ function Tracker({ user }: { user: User }) {
 
   useEffect(() => {
     const profileRef = doc(db, "users", user.uid);
-    getDoc(profileRef)
-      .then((snapshot) => {
-        const data = (snapshot.exists() ? snapshot.data() : {}) as Partial<Profile>;
+    Promise.all([
+      getDoc(profileRef),
+      getDoc(doc(db, "users", user.uid, "days", selectedDate)),
+    ])
+      .then(([snapshot, daySnapshot]) => {
+        const data = snapshot.exists() ? snapshot.data() : {};
         const loadedProfile: Profile = {
           displayName: data.displayName || currentDisplayName(user),
-          maintenanceCalories: data.maintenanceCalories || 2200,
-          proteinGoal: data.proteinGoal || 120,
-          fiberGoal: data.fiberGoal || 30,
+          dayGoals: readDayGoals(data),
         };
+        const storedDayType = daySnapshot.exists() ? daySnapshot.data().dayType : undefined;
+        const loadedDayType: DayType = storedDayType === "cardio" || storedDayType === "strength"
+          ? storedDayType
+          : "normal";
+        setDayType(loadedDayType);
         setProfile(loadedProfile);
         setSettingsForm({
           displayName: loadedProfile.displayName,
-          maintenanceCalories: String(loadedProfile.maintenanceCalories),
-          proteinGoal: String(loadedProfile.proteinGoal),
-          fiberGoal: String(loadedProfile.fiberGoal),
+          dayGoals: goalFormValues(loadedProfile.dayGoals),
         });
       })
       .catch((error) => setSaveError(firestoreMessage(error, "Unable to load your profile.")));
@@ -423,9 +438,10 @@ function Tracker({ user }: { user: User }) {
     () => entries.reduce((sum, entry) => sum + entry.fiber, 0),
     [entries],
   );
-  const targetCalories = profile.maintenanceCalories || 2200;
-  const targetProtein = profile.proteinGoal || 120;
-  const targetFiber = profile.fiberGoal || 30;
+  const activeGoals = profile.dayGoals[dayType] || defaultDayGoals.normal;
+  const targetCalories = activeGoals.calories;
+  const targetProtein = activeGoals.protein;
+  const targetFiber = activeGoals.fiber;
   const remainingCalories = targetCalories - totalCalories;
   const progress = Math.min((totalCalories / targetCalories) * 100, 100);
   const groupedEntries = (meal: MealName) =>
@@ -514,6 +530,18 @@ function Tracker({ user }: { user: User }) {
       { date: selectedDate, ...nextTotals, updatedAt: serverTimestamp() },
       { merge: true },
     );
+  const changeDayType = async (nextDayType: DayType) => {
+    setDayType(nextDayType);
+    try {
+      await setDoc(
+        doc(db, "users", user.uid, "days", selectedDate),
+        { date: selectedDate, dayType: nextDayType, updatedAt: serverTimestamp() },
+        { merge: true },
+      );
+    } catch (error) {
+      setSaveError(firestoreMessage(error, "Unable to save this day type."));
+    }
+  };
   const saveEntry = async () => {
     const parts = newEntryParts
       .filter((part) => part.name.trim())
@@ -630,9 +658,11 @@ function Tracker({ user }: { user: User }) {
   const saveSettings = async () => {
     const nextProfile: Profile = {
       displayName: settingsForm.displayName.trim() || currentDisplayName(user),
-      maintenanceCalories: Math.max(1, Number(settingsForm.maintenanceCalories) || 2200),
-      proteinGoal: Math.max(0, Number(settingsForm.proteinGoal) || 120),
-      fiberGoal: Math.max(0, Number(settingsForm.fiberGoal) || 30),
+      dayGoals: {
+        normal: goalSetFromForm(settingsForm.dayGoals.normal, defaultDayGoals.normal),
+        cardio: goalSetFromForm(settingsForm.dayGoals.cardio, defaultDayGoals.cardio),
+        strength: goalSetFromForm(settingsForm.dayGoals.strength, defaultDayGoals.strength),
+      },
     };
     try {
       await setDoc(doc(db, "users", user.uid), nextProfile, { merge: true });
@@ -729,14 +759,26 @@ function Tracker({ user }: { user: User }) {
             <div>
               <p className="eyebrow">{formatLongDate(activeView === "Daily log" ? parseDateKey(selectedDate) : new Date())}</p>
             </div>
-            {activeView === "Daily log" && (
-              <label className="date-button">
-                <CalendarDays size={17} />
-                {selectedDate === todayKey ? "Today" : formatShortDate(parseDateKey(selectedDate))}
+            <div className="day-controls">
+              <label className="select-button day-type-button" aria-label="Day type for selected date">
+                <Activity size={16} />
+                <span>This day</span>
+                <select aria-label="Select day type" value={dayType} onChange={(event) => void changeDayType(event.target.value as DayType)}>
+                  {Object.entries(dayTypeLabels).map(([value, label]) => (
+                    <option key={value} value={value}>{label}</option>
+                  ))}
+                </select>
                 <ChevronDown size={15} />
-                <input className="date-picker" type="date" value={selectedDate} onChange={(event) => setSelectedDate(event.target.value)} />
               </label>
-            )}
+              {activeView === "Daily log" && (
+                <label className="date-button">
+                  <CalendarDays size={17} />
+                  {selectedDate === todayKey ? "Today" : formatShortDate(parseDateKey(selectedDate))}
+                  <ChevronDown size={15} />
+                  <input className="date-picker" type="date" value={selectedDate} onChange={(event) => setSelectedDate(event.target.value)} />
+                </label>
+              )}
+            </div>
           </section>
           {saveError && <p className="inline-error">{saveError}</p>}
           {activeView === "Progress" && (
@@ -1319,7 +1361,7 @@ function Tracker({ user }: { user: User }) {
             <div className="modal-heading">
               <div>
                 <p className="eyebrow">Personal plan</p>
-                <h2>Your daily goals</h2>
+                <h2>Your day goals</h2>
               </div>
               <button type="button" className="icon-button" onClick={() => setIsSettingsOpen(false)} aria-label="Close">
                 <X size={18} />
@@ -1329,20 +1371,19 @@ function Tracker({ user }: { user: User }) {
               Display name
               <input value={settingsForm.displayName} onChange={(event) => setSettingsForm({ ...settingsForm, displayName: event.target.value })} />
             </label>
-            <div className="form-row nutrition-row">
-              <label>
-                Calories
-                <input type="number" min="1" value={settingsForm.maintenanceCalories} onChange={(event) => setSettingsForm({ ...settingsForm, maintenanceCalories: event.target.value })} />
-              </label>
-              <label>
-                Protein (g)
-                <input type="number" min="0" step="any" value={settingsForm.proteinGoal} onChange={(event) => setSettingsForm({ ...settingsForm, proteinGoal: event.target.value })} />
-              </label>
-              <label>
-                Fiber (g)
-                <input type="number" min="0" step="any" value={settingsForm.fiberGoal} onChange={(event) => setSettingsForm({ ...settingsForm, fiberGoal: event.target.value })} />
-              </label>
-            </div>
+            {Object.entries(dayTypeLabels).map(([type, label]) => {
+              const key = type as DayType;
+              return (
+                <div className="goal-group" key={key}>
+                  <h3>{label}</h3>
+                  <div className="form-row nutrition-row">
+                    <label>Calories<input type="number" min="1" value={settingsForm.dayGoals[key].calories} onChange={(event) => setSettingsForm({ ...settingsForm, dayGoals: { ...settingsForm.dayGoals, [key]: { ...settingsForm.dayGoals[key], calories: event.target.value } } })} /></label>
+                    <label>Protein (g)<input type="number" min="0" step="any" value={settingsForm.dayGoals[key].protein} onChange={(event) => setSettingsForm({ ...settingsForm, dayGoals: { ...settingsForm.dayGoals, [key]: { ...settingsForm.dayGoals[key], protein: event.target.value } } })} /></label>
+                    <label>Fiber (g)<input type="number" min="0" step="any" value={settingsForm.dayGoals[key].fiber} onChange={(event) => setSettingsForm({ ...settingsForm, dayGoals: { ...settingsForm.dayGoals, [key]: { ...settingsForm.dayGoals[key], fiber: event.target.value } } })} /></label>
+                  </div>
+                </div>
+              );
+            })}
             <button className="submit-button" type="submit">Save goals <ArrowUpRight size={17} /></button>
           </form>
         </div>
@@ -1357,6 +1398,33 @@ function lastDays(count: number) {
     date.setDate(date.getDate() - (count - index - 1));
     return date;
   });
+}
+function goalFormValues(goals: Record<DayType, GoalSet>) {
+  return {
+    normal: { calories: String(goals.normal.calories), protein: String(goals.normal.protein), fiber: String(goals.normal.fiber) },
+    cardio: { calories: String(goals.cardio.calories), protein: String(goals.cardio.protein), fiber: String(goals.cardio.fiber) },
+    strength: { calories: String(goals.strength.calories), protein: String(goals.strength.protein), fiber: String(goals.strength.fiber) },
+  };
+}
+function goalSetFromForm(values: { calories: string; protein: string; fiber: string }, fallback: GoalSet): GoalSet {
+  return {
+    calories: Math.max(1, Number(values.calories) || fallback.calories),
+    protein: Math.max(0, Number(values.protein) || fallback.protein),
+    fiber: Math.max(0, Number(values.fiber) || fallback.fiber),
+  };
+}
+function readDayGoals(data: Record<string, any>): Record<DayType, GoalSet> {
+  const stored = data.dayGoals as Partial<Record<DayType, Partial<GoalSet>>> | undefined;
+  const legacyNormal = {
+    calories: Number(data.maintenanceCalories) || defaultDayGoals.normal.calories,
+    protein: Number(data.proteinGoal) || defaultDayGoals.normal.protein,
+    fiber: Number(data.fiberGoal) || defaultDayGoals.normal.fiber,
+  };
+  return {
+    normal: { ...defaultDayGoals.normal, ...legacyNormal, ...(stored?.normal || {}) },
+    cardio: { ...defaultDayGoals.cardio, ...(stored?.cardio || {}) },
+    strength: { ...defaultDayGoals.strength, ...(stored?.strength || {}) },
+  };
 }
 function roundNutrition(value: string | number) {
   const numericValue = typeof value === "number" ? value : Number(value);
