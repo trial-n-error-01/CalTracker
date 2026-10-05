@@ -126,6 +126,31 @@
     box-shadow: inset 3px 0 #d9634a;
 }
 
+.nav-subitem {
+    width: calc(100% - 21px);
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin: 2px 0 2px 21px;
+    padding: 9px 10px;
+    border-left: 1px solid #ded6ca;
+    border-radius: 0 6px 6px 0;
+    color: #807a71;
+    font-size: 12px;
+    text-decoration: none;
+}
+
+.nav-subitem:hover,
+.nav-subitem.active {
+    color: #2d2b27;
+    background: #e4ded3;
+}
+
+.nav-subitem.active {
+    border-left: 2px solid #d9634a;
+    font-weight: 600;
+}
+
 .sidebar-bottom {
     margin-top: auto;
 }
@@ -837,6 +862,93 @@
     font-size: 20px;
 }
 
+.recipes-section {
+    margin-top: 36px;
+}
+
+.recipes-page .welcome-row,
+.recipes-page .progress-view,
+.recipes-page .summary-grid,
+.recipes-page .chart-grid,
+.recipes-page .progress-macro-section,
+.recipes-page .log-section {
+    display: none;
+}
+
+.recipes-page .recipes-section {
+    margin-top: 0;
+}
+
+.recipes-section .section-heading {
+    margin-bottom: 12px;
+}
+
+.recipes-section .section-heading h2 {
+    margin: 0;
+    font-size: 23px;
+}
+
+.recipe-row {
+    display: grid;
+    grid-template-columns: minmax(0, 1.3fr) minmax(190px, 1fr) auto auto;
+    align-items: center;
+    gap: 12px;
+    padding: 14px 4px;
+    border-bottom: 1px solid #e1d9cd;
+}
+
+.recipe-title {
+    display: flex;
+    min-width: 0;
+    align-items: center;
+    gap: 10px;
+}
+
+.recipe-icon {
+    width: 32px;
+    height: 32px;
+    flex: 0 0 32px;
+    display: grid;
+    place-items: center;
+    border-radius: 8px;
+    color: #b15b49;
+    background: #f7ddd4;
+}
+
+.recipe-title strong,
+.recipe-title span,
+.recipe-nutrition strong,
+.recipe-nutrition span {
+    display: block;
+}
+
+.recipe-title strong,
+.recipe-nutrition strong {
+    color: #37332d;
+    font-size: 11px;
+}
+
+.recipe-title div,
+.recipe-nutrition {
+    min-width: 0;
+}
+
+.recipe-title div span,
+.recipe-nutrition span {
+    overflow: hidden;
+    margin-top: 4px;
+    color: #938b80;
+    font-size: 9px;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.recipes-empty {
+    padding: 16px 0;
+    color: #8c867c;
+    font-size: 12px;
+}
+
 .progress-page .summary-grid,
 .progress-page .log-section {
     display: none;
@@ -1222,7 +1334,7 @@
 
 .part-editor {
     display: grid;
-    grid-template-columns: minmax(100px, 1.6fr) repeat(3, minmax(55px, 1fr)) auto;
+    grid-template-columns: minmax(65px, 1.2fr) minmax(55px, .8fr) repeat(3, minmax(48px, .8fr)) auto;
     gap: 5px;
     align-items: center;
     margin-top: 10px;
@@ -1246,6 +1358,10 @@
     width: 100%;
     justify-content: center;
     margin-top: 7px;
+}
+
+.recipe-modal {
+    width: min(100%, 650px);
 }
 
 .auth-loading {

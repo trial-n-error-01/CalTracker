@@ -9,6 +9,7 @@ import {
   Activity,
   ArrowUpRight,
   CalendarDays,
+  ChefHat,
   ChevronDown,
   Coffee,
   Ellipsis,
@@ -74,9 +75,15 @@ type GoalSet = {
 };
 type MealPart = {
   name: string;
+  quantity?: string;
   calories: number;
   protein: number;
   fiber: number;
+};
+type Recipe = {
+  id: string;
+  name: string;
+  parts: MealPart[];
 };
 type Entry = {
   id: string;
@@ -124,9 +131,9 @@ const defaultRangeStart = () => {
   return dateKey(date);
 };
 const viewFromPath = (path: string) =>
-  path === "/daily-log" ? "Daily log" : path === "/progress" ? "Progress" : "Overview";
+  path === "/daily-log" ? "Daily log" : path === "/progress" ? "Progress" : path === "/recipes" ? "Recipes" : "Overview";
 const pathFromView = (view: string) =>
-  view === "Daily log" ? "/daily-log" : view === "Progress" ? "/progress" : "/";
+  view === "Daily log" ? "/daily-log" : view === "Progress" ? "/progress" : view === "Recipes" ? "/recipes" : "/";
 
 function App() {
   const [user, setUser] = useState<User | null>(null);
@@ -315,6 +322,7 @@ function Tracker({ user }: { user: User }) {
   const [fiberCustomStart, setFiberCustomStart] = useState(defaultRangeStart);
   const [fiberCustomEnd, setFiberCustomEnd] = useState(todayKey);
   const [entries, setEntries] = useState<Entry[]>([]);
+  const [recipes, setRecipes] = useState<Recipe[]>([]);
   const [dayTotals, setDayTotals] = useState<DayTotal[]>([]);
   const [profile, setProfile] = useState<Profile>({
     displayName: user.displayName || user.email?.split("@")[0] || "there",
@@ -336,6 +344,11 @@ function Tracker({ user }: { user: User }) {
   const [newEntryParts, setNewEntryParts] = useState<MealPartInput[]>([]);
   const [isMultipart, setIsMultipart] = useState(false);
   const [editingEntry, setEditingEntry] = useState<Entry | null>(null);
+  const [selectedRecipeId, setSelectedRecipeId] = useState("");
+  const [isRecipeModalOpen, setIsRecipeModalOpen] = useState(false);
+  const [editingRecipe, setEditingRecipe] = useState<Recipe | null>(null);
+  const [recipeName, setRecipeName] = useState("");
+  const [recipeParts, setRecipeParts] = useState<MealPartInput[]>([]);
   const [saveError, setSaveError] = useState("");
 
   useEffect(() => {
@@ -423,6 +436,25 @@ function Tracker({ user }: { user: User }) {
           })),
         ),
       (error) => setSaveError(firestoreMessage(error, "Unable to load your trend data.")),
+    );
+  }, [user.uid]);
+
+  useEffect(() => {
+    const recipesQuery = query(
+      collection(db, "users", user.uid, "recipes"),
+      orderBy("name", "asc"),
+    );
+    return onSnapshot(
+      recipesQuery,
+      (snapshot) =>
+        setRecipes(
+          snapshot.docs.map((recipe) => ({
+            id: recipe.id,
+            name: recipe.data().name,
+            parts: Array.isArray(recipe.data().parts) ? recipe.data().parts : [],
+          })),
+        ),
+      (error) => setSaveError(firestoreMessage(error, "Unable to load your recipes.")),
     );
   }, [user.uid]);
 
@@ -547,6 +579,7 @@ function Tracker({ user }: { user: User }) {
       .filter((part) => part.name.trim())
       .map((part) => ({
         name: part.name.trim(),
+        quantity: part.quantity.trim(),
         calories: Number(part.calories) || 0,
         protein: roundNutrition(part.protein),
         fiber: roundNutrition(part.fiber),
@@ -604,6 +637,7 @@ function Tracker({ user }: { user: User }) {
   };
   const editEntry = (entry: Entry) => {
     setEditingEntry(entry);
+    setSelectedRecipeId("");
     setNewEntry({
       name: entry.name,
       calories: String(entry.calories),
@@ -614,6 +648,7 @@ function Tracker({ user }: { user: User }) {
     setNewEntryParts(
       entry.parts.map((part) => ({
         name: part.name,
+        quantity: part.quantity || "",
         calories: String(part.calories),
         protein: String(part.protein),
         fiber: String(part.fiber),
@@ -625,6 +660,7 @@ function Tracker({ user }: { user: User }) {
   const closeEntryModal = () => {
     setIsAdding(false);
     setEditingEntry(null);
+    setSelectedRecipeId("");
   };
   const startAddingEntry = () => {
     setEditingEntry(null);
@@ -637,7 +673,94 @@ function Tracker({ user }: { user: User }) {
     });
     setNewEntryParts([]);
     setIsMultipart(false);
+    setSelectedRecipeId("");
     setIsAdding(true);
+  };
+  const applyRecipe = (recipeId: string) => {
+    setSelectedRecipeId(recipeId);
+    const recipe = recipes.find((item) => item.id === recipeId);
+    if (!recipe) {
+      setNewEntry({ ...newEntry, name: "", calories: "", protein: "", fiber: "" });
+      setNewEntryParts([]);
+      setIsMultipart(false);
+      return;
+    }
+    setNewEntry({
+      name: recipe.name,
+      calories: "",
+      protein: "",
+      fiber: "",
+      meal: newEntry.meal,
+    });
+    setNewEntryParts(
+      recipe.parts.map((part) => ({
+        name: part.name,
+        quantity: part.quantity || "",
+        calories: String(part.calories),
+        protein: String(part.protein),
+        fiber: String(part.fiber),
+      })),
+    );
+    setIsMultipart(true);
+  };
+  const openRecipeModal = (recipe?: Recipe) => {
+    setEditingRecipe(recipe || null);
+    setRecipeName(recipe?.name || "");
+    setRecipeParts(
+      recipe
+        ? recipe.parts.map((part) => ({
+          name: part.name,
+          quantity: part.quantity || "",
+          calories: String(part.calories),
+          protein: String(part.protein),
+          fiber: String(part.fiber),
+        }))
+        : [emptyMealPart()],
+    );
+    setIsRecipeModalOpen(true);
+  };
+  const closeRecipeModal = () => {
+    setIsRecipeModalOpen(false);
+    setEditingRecipe(null);
+  };
+  const saveRecipe = async () => {
+    const parts = recipeParts
+      .filter((part) => part.name.trim())
+      .map((part) => ({
+        name: part.name.trim(),
+        quantity: part.quantity.trim(),
+        calories: Number(part.calories) || 0,
+        protein: roundNutrition(part.protein),
+        fiber: roundNutrition(part.fiber),
+      }));
+    if (!recipeName.trim() || !parts.length) return;
+    try {
+      const recipeData = {
+        name: recipeName.trim(),
+        parts,
+        updatedAt: serverTimestamp(),
+      };
+      if (editingRecipe) {
+        await updateDoc(doc(db, "users", user.uid, "recipes", editingRecipe.id), recipeData);
+      } else {
+        await addDoc(collection(db, "users", user.uid, "recipes"), {
+          ...recipeData,
+          createdAt: serverTimestamp(),
+        });
+      }
+      closeRecipeModal();
+      setSaveError("");
+    } catch (error) {
+      setSaveError(firestoreMessage(error, "Unable to save this recipe."));
+    }
+  };
+  const removeRecipe = async (recipe: Recipe) => {
+    try {
+      await deleteDoc(doc(db, "users", user.uid, "recipes", recipe.id));
+      if (selectedRecipeId === recipe.id) setSelectedRecipeId("");
+    } catch (error) {
+      setSaveError(firestoreMessage(error, "Unable to remove this recipe."));
+    }
   };
   const removeEntry = async (entry: Entry) => {
     try {
@@ -701,7 +824,7 @@ function Tracker({ user }: { user: User }) {
             { label: "Progress", icon: Activity },
           ].map(({ label, icon: Icon }) => (
             <a
-              className={activeView === label ? "nav-item active" : "nav-item"}
+              className={activeView === label || (label === "Progress" && activeView === "Recipes") ? "nav-item active" : "nav-item"}
               href={pathFromView(label)}
               key={label}
               onClick={() => setIsSidebarOpen(false)}
@@ -710,6 +833,14 @@ function Tracker({ user }: { user: User }) {
               {label}
             </a>
           ))}
+          <a
+            className={activeView === "Recipes" ? "nav-subitem active" : "nav-subitem"}
+            href={pathFromView("Recipes")}
+            onClick={() => setIsSidebarOpen(false)}
+          >
+            <ChefHat size={16} />
+            Recipes
+          </a>
         </nav>
         <div className="sidebar-bottom">
           <button className="nav-item" onClick={() => setIsSettingsOpen(true)}>
@@ -754,7 +885,7 @@ function Tracker({ user }: { user: User }) {
             <strong>{activeView}</strong>
           </div>
         </header>
-        <div className={`page-wrap ${activeView === "Progress" ? "progress-page" : activeView === "Daily log" ? "daily-log-page" : "overview-page"}`}>
+        <div className={`page-wrap ${activeView === "Progress" ? "progress-page" : activeView === "Recipes" ? "recipes-page" : activeView === "Daily log" ? "daily-log-page" : "overview-page"}`}>
           <section className="welcome-row">
             <div>
               <p className="eyebrow">{formatLongDate(activeView === "Daily log" ? parseDateKey(selectedDate) : new Date())}</p>
@@ -796,6 +927,46 @@ function Tracker({ user }: { user: User }) {
                 <div><span>Days on target</span><strong>{daysOnTrack} days</strong></div>
                 <div><span>Consistency</span><strong>{consistency}%</strong></div>
               </div>
+            </section>
+          )}
+          {activeView === "Recipes" && (
+            <section className="recipes-section">
+              <div className="section-heading">
+                <div>
+                  <p className="eyebrow">Your kitchen</p>
+                  <h2>Saved recipes</h2>
+                </div>
+                <button className="add-button" onClick={() => openRecipeModal()}>
+                  <Plus size={17} /> Add recipe
+                </button>
+              </div>
+              {recipes.length ? (
+                <div className="recipe-list">
+                  {recipes.map((recipe) => (
+                    <article className="recipe-row" key={recipe.id}>
+                      <div className="recipe-title">
+                        <span className="recipe-icon"><ChefHat size={17} /></span>
+                        <div>
+                          <strong>{recipe.name}</strong>
+                          <span>{recipe.parts.map((part) => `${part.quantity ? `${part.quantity} ` : ""}${part.name}`).join(" · ")}</span>
+                        </div>
+                      </div>
+                      <div className="recipe-nutrition">
+                        <strong>{recipe.parts.reduce((sum, part) => sum + part.calories, 0)} kcal</strong>
+                        <span>{formatNutrition(recipe.parts.reduce((sum, part) => sum + part.protein, 0))}g protein · {formatNutrition(recipe.parts.reduce((sum, part) => sum + part.fiber, 0))}g fiber</span>
+                      </div>
+                      <button className="remove-button" type="button" onClick={() => openRecipeModal(recipe)} aria-label={`Edit ${recipe.name}`}>
+                        <Pencil size={14} />
+                      </button>
+                      <button className="remove-button" type="button" onClick={() => void removeRecipe(recipe)} aria-label={`Remove ${recipe.name}`}>
+                        <X size={14} />
+                      </button>
+                    </article>
+                  ))}
+                </div>
+              ) : (
+                <p className="recipes-empty">Save a recipe with its ingredients and quantities to log it in one step.</p>
+              )}
             </section>
           )}
           <section className="summary-grid">
@@ -1175,7 +1346,7 @@ function Tracker({ user }: { user: User }) {
                               <div className="food-parts">
                                 {entry.parts.map((part) => (
                                   <span key={`${entry.id}-${part.name}`}>
-                                    {part.name}: {part.calories} kcal
+                                    {part.quantity ? `${part.quantity} ` : ""}{part.name}: {part.calories} kcal
                                   </span>
                                 ))}
                               </div>
@@ -1244,6 +1415,15 @@ function Tracker({ user }: { user: User }) {
                 placeholder="e.g. Chicken salad"
               />
             </label>
+            {!editingEntry && recipes.length > 0 && (
+              <label>
+                Use a saved recipe
+                <select value={selectedRecipeId} onChange={(event) => applyRecipe(event.target.value)}>
+                  <option value="">Choose a recipe</option>
+                  {recipes.map((recipe) => <option key={recipe.id} value={recipe.id}>{recipe.name}</option>)}
+                </select>
+              </label>
+            )}
             <div className="form-row nutrition-row">
               {!isMultipart && (
                 <NutritionInputs
@@ -1282,6 +1462,12 @@ function Tracker({ user }: { user: User }) {
                       value={part.name}
                       onChange={(event) => updateMealPart(setNewEntryParts, newEntryParts, index, "name", event.target.value)}
                       placeholder="e.g. Iced tea"
+                    />
+                    <input
+                      aria-label={`Subpart ${index + 1} quantity`}
+                      value={part.quantity}
+                      onChange={(event) => updateMealPart(setNewEntryParts, newEntryParts, index, "quantity", event.target.value)}
+                      placeholder="quantity"
                     />
                     <input
                       aria-label={`Subpart ${index + 1} calories`}
@@ -1345,6 +1531,57 @@ function Tracker({ user }: { user: User }) {
             <button className="submit-button" type="submit">
               {editingEntry ? "Save changes" : "Add to daily log"} <ArrowUpRight size={17} />
             </button>
+          </form>
+        </div>
+      )}
+      {isRecipeModalOpen && (
+        <div className="modal-backdrop" onClick={closeRecipeModal}>
+          <form
+            className="add-modal recipe-modal"
+            onSubmit={(event) => {
+              event.preventDefault();
+              void saveRecipe();
+            }}
+            onClick={(event) => event.stopPropagation()}
+          >
+            <div className="modal-heading">
+              <div>
+                <p className="eyebrow">Your kitchen</p>
+                <h2>{editingRecipe ? "Edit recipe" : "New recipe"}</h2>
+              </div>
+              <button type="button" className="icon-button" onClick={closeRecipeModal} aria-label="Close">
+                <X size={18} />
+              </button>
+            </div>
+            <label>
+              Recipe name
+              <input autoFocus value={recipeName} onChange={(event) => setRecipeName(event.target.value)} placeholder="e.g. Overnight oats" />
+            </label>
+            <div className="parts-editor">
+              <div className="parts-heading">
+                <span>Ingredients</span>
+                <button type="button" className="add-part-button" onClick={() => setRecipeParts([...recipeParts, emptyMealPart()])}>
+                  <Plus size={14} /> Add ingredient
+                </button>
+              </div>
+              {recipeParts.length === 0 && <p className="parts-empty">Add ingredients and the amount you use.</p>}
+              {recipeParts.map((part, index) => (
+                <div className="part-editor" key={index}>
+                  <input aria-label={`Ingredient ${index + 1} name`} value={part.name} onChange={(event) => updateMealPart(setRecipeParts, recipeParts, index, "name", event.target.value)} placeholder="Ingredient" />
+                  <input aria-label={`Ingredient ${index + 1} quantity`} value={part.quantity} onChange={(event) => updateMealPart(setRecipeParts, recipeParts, index, "quantity", event.target.value)} placeholder="Amount" />
+                  <input aria-label={`Ingredient ${index + 1} calories`} type="number" min="0" value={part.calories} onChange={(event) => updateMealPart(setRecipeParts, recipeParts, index, "calories", event.target.value)} placeholder="kcal" />
+                  <input aria-label={`Ingredient ${index + 1} protein`} type="number" min="0" step="any" value={part.protein} onChange={(event) => updateMealPart(setRecipeParts, recipeParts, index, "protein", event.target.value)} placeholder="protein" />
+                  <input aria-label={`Ingredient ${index + 1} fiber`} type="number" min="0" step="any" value={part.fiber} onChange={(event) => updateMealPart(setRecipeParts, recipeParts, index, "fiber", event.target.value)} placeholder="fiber" />
+                  <button type="button" className="remove-button" aria-label={`Remove ingredient ${index + 1}`} onClick={() => setRecipeParts(recipeParts.filter((_, partIndex) => partIndex !== index))}>
+                    <X size={14} />
+                  </button>
+                </div>
+              ))}
+              <p className="parts-total">
+                Total: {recipeParts.reduce((sum, part) => sum + (Number(part.calories) || 0), 0)} kcal · {formatNutrition(recipeParts.reduce((sum, part) => sum + roundNutrition(part.protein), 0))}g protein · {formatNutrition(recipeParts.reduce((sum, part) => sum + roundNutrition(part.fiber), 0))}g fiber
+              </p>
+            </div>
+            <button className="submit-button" type="submit">Save recipe <ArrowUpRight size={17} /></button>
           </form>
         </div>
       )}
@@ -1519,9 +1756,9 @@ function DailyIntakeStat({
     </div>
   );
 }
-type MealPartInput = { name: string; calories: string; protein: string; fiber: string };
+type MealPartInput = { name: string; quantity: string; calories: string; protein: string; fiber: string };
 function emptyMealPart(): MealPartInput {
-  return { name: "", calories: "", protein: "", fiber: "" };
+  return { name: "", quantity: "", calories: "", protein: "", fiber: "" };
 }
 function updateMealPart(
   setParts: React.Dispatch<React.SetStateAction<MealPartInput[]>>,
