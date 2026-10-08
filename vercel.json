@@ -7,6 +7,10 @@
         {
             "source": "/progress",
             "destination": "/index.html"
+        },
+        {
+            "source": "/recipes",
+            "destination": "/index.html"
         }
     ]
 }
